@@ -1,0 +1,23 @@
+name: Dela
+options:
+  bundleIdPrefix: com.mydela
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Dela:
+    type: application
+    platform: iOS
+    sources: [Dela]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mydela.app
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: Dela/Info.plist
+      properties:
+        CFBundleDisplayName: Дела
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
