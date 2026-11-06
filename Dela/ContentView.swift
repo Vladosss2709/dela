@@ -17,7 +17,8 @@ struct MiniApp: Identifiable {
 enum MiniAppRegistry {
     static let all: [MiniApp] = [
         MiniApp(id: "reminders", title: "Дела", icon: "checklist", color: Theme.accent),
-        MiniApp(id: "expenses", title: "Траты", icon: "creditcard.fill", color: Theme.indigo)
+        MiniApp(id: "expenses", title: "Траты", icon: "creditcard.fill", color: Theme.indigo),
+        MiniApp(id: "wishlist", title: "Хочу", icon: "bookmark.fill", color: Theme.teal)
     ]
 
     @ViewBuilder
@@ -27,6 +28,8 @@ enum MiniAppRegistry {
             RemindersView()
         case "expenses":
             ExpensesView()
+        case "wishlist":
+            WishlistView()
         default:
             Text("Скоро")
         }
