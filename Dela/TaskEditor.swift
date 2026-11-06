@@ -8,9 +8,9 @@ struct TaskEditor: View {
     @State private var hasDate: Bool
     @State private var date: Date
 
-    init(task: TaskItem) {
+    init(task: TaskItem, remind: Bool = false) {
         _task = State(initialValue: task)
-        _hasDate = State(initialValue: task.dueDate != nil)
+        _hasDate = State(initialValue: remind || task.dueDate != nil)
         _date = State(initialValue: task.dueDate ?? TaskEditor.defaultDate())
     }
 
@@ -32,10 +32,14 @@ struct TaskEditor: View {
                 Section {
                     TextField("Что нужно сделать?", text: $task.title, axis: .vertical)
                 }
+                .listRowBackground(Theme.card2)
+
                 Section("Заметка") {
                     TextField("Подробности (необязательно)", text: $task.notes, axis: .vertical)
                         .lineLimit(1...4)
                 }
+                .listRowBackground(Theme.card2)
+
                 Section("Напоминание") {
                     Toggle("Напомнить", isOn: $hasDate.animation())
                     if hasDate {
@@ -51,6 +55,8 @@ struct TaskEditor: View {
                         }
                     }
                 }
+                .listRowBackground(Theme.card2)
+
                 if !isNew {
                     Section {
                         Button("Удалить задачу", role: .destructive) {
@@ -58,8 +64,11 @@ struct TaskEditor: View {
                             dismiss()
                         }
                     }
+                    .listRowBackground(Theme.card2)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.card)
             .navigationTitle(isNew ? "Новая задача" : "Задача")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -71,6 +80,7 @@ struct TaskEditor: View {
                 }
             }
         }
+        .tint(Theme.accent)
         .presentationDetents([.medium, .large])
     }
 
@@ -78,6 +88,7 @@ struct TaskEditor: View {
         Button(title, action: action)
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .tint(Theme.accent)
     }
 
     private func at(hour: Int, plusDays: Int) -> Date {

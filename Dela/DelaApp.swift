@@ -4,11 +4,16 @@ import UserNotifications
 @main
 struct DelaApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var store = TaskStore()
+    @StateObject private var tasks = TaskStore()
+    @StateObject private var expenses = ExpenseStore()
 
     var body: some Scene {
         WindowGroup {
-            ContentView().environmentObject(store)
+            ContentView()
+                .environmentObject(tasks)
+                .environmentObject(expenses)
+                .preferredColorScheme(.dark)
+                .tint(Theme.accent)
         }
     }
 }

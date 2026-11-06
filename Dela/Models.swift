@@ -1,28 +1,6 @@
 import Foundation
 import UserNotifications
-
-struct TaskItem: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var title: String
-    var notes: String = ""
-    var dueDate: Date? = nil
-    var isDone: Bool = false
-}
-
-func formatDue(_ d: Date) -> String {
-    let cal = Calendar.current
-    let tf = DateFormatter()
-    tf.locale = Locale(identifier: "ru_RU")
-    tf.dateFormat = "HH:mm"
-    let time = tf.string(from: d)
-    if cal.isDateInToday(d) { return "Сегодня, \(time)" }
-    if cal.isDateInTomorrow(d) { return "Завтра, \(time)" }
-    if cal.isDateInYesterday(d) { return "Вчера, \(time)" }
-    let df = DateFormatter()
-    df.locale = Locale(identifier: "ru_RU")
-    df.dateFormat = "d MMM, HH:mm"
-    return df.string(from: d)
-}
+import WidgetKit
 
 enum Notifier {
     static func requestAuthorization() {
@@ -54,11 +32,8 @@ final class TaskStore: ObservableObject {
         didSet { save() }
     }
 
-    private let fileURL = FileManager.default
-        .urls(for: .documentDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("tasks.json")
-
     init() {
+        migrateIfNeeded()
         load()
         Notifier.requestAuthorization()
         for t in tasks { Notifier.schedule(t) }
@@ -89,15 +64,23 @@ final class TaskStore: ObservableObject {
         tasks.removeAll { $0.isDone }
     }
 
+    /// Если появился общий контейнер (для виджета), переносим туда старые задачи из Documents.
+    private func migrateIfNeeded() {
+        guard let group = SharedStorage.groupURL else { return }
+        let groupFile = group.appendingPathComponent("tasks.json")
+        let oldFile = SharedStorage.documentsURL.appendingPathComponent("tasks.json")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: groupFile.path), fm.fileExists(atPath: oldFile.path) {
+            try? fm.copyItem(at: oldFile, to: groupFile)
+        }
+    }
+
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([TaskItem].self, from: data) else { return }
-        tasks = decoded
+        tasks = SharedStorage.loadTasks()
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(tasks) {
-            try? data.write(to: fileURL, options: .atomic)
-        }
+        SharedStorage.saveTasks(tasks)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }

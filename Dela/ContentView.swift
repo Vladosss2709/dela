@@ -1,154 +1,109 @@
 import SwiftUI
 
-struct ContentView: View {
-    @EnvironmentObject var store: TaskStore
-    @State private var editing: TaskItem?
-    @State private var quickTitle = ""
+// ───────────────────────────────────────────────────────────
+// Главный экран: сетка иконок мини-приложений.
+// Чтобы добавить новое мини-приложение:
+//   1) добавьте строку в MiniAppRegistry.all
+//   2) добавьте case в MiniAppRegistry.view(for:)
+// ───────────────────────────────────────────────────────────
 
-    private let cal = Calendar.current
+struct MiniApp: Identifiable {
+    let id: String
+    let title: String
+    let icon: String      // название SF Symbol
+    let color: Color
+}
 
-    private func list(_ pred: (TaskItem) -> Bool) -> [TaskItem] {
-        store.tasks.filter(pred).sorted {
-            ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture)
-        }
-    }
-
-    private var overdue: [TaskItem] {
-        list { !$0.isDone && ($0.dueDate ?? .distantFuture) < Date() }
-    }
-    private var today: [TaskItem] {
-        list { t in
-            guard !t.isDone, let d = t.dueDate else { return false }
-            return d >= Date() && cal.isDateInToday(d)
-        }
-    }
-    private var later: [TaskItem] {
-        list { t in
-            guard !t.isDone, let d = t.dueDate else { return false }
-            return d >= Date() && !cal.isDateInToday(d)
-        }
-    }
-    private var noDate: [TaskItem] {
-        list { !$0.isDone && $0.dueDate == nil }
-    }
-    private var done: [TaskItem] {
-        list { $0.isDone }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                block("Просрочено", overdue, .red)
-                block("Сегодня", today, .blue)
-                block("Позже", later, .primary)
-                block("Без срока", noDate, .secondary)
-                if !done.isEmpty {
-                    Section {
-                        ForEach(done) { t in row(t) }
-                    } header: {
-                        HStack {
-                            Text("Выполнено")
-                            Spacer()
-                            Button("Очистить") { store.clearDone() }.font(.caption)
-                        }
-                    }
-                }
-            }
-            .overlay {
-                if store.tasks.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "checklist").font(.system(size: 48))
-                        Text("Пока нет задач").font(.headline)
-                        Text("Напишите задачу внизу").font(.subheadline)
-                    }
-                    .foregroundColor(.secondary)
-                }
-            }
-            .navigationTitle("Дела")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { editing = TaskItem(title: "") } label: { Image(systemName: "plus") }
-                }
-            }
-            .safeAreaInset(edge: .bottom) { quickBar }
-            .sheet(item: $editing) { t in
-                TaskEditor(task: t).environmentObject(store)
-            }
-        }
-    }
+enum MiniAppRegistry {
+    static let all: [MiniApp] = [
+        MiniApp(id: "reminders", title: "Дела", icon: "checklist", color: Theme.accent),
+        MiniApp(id: "expenses", title: "Траты", icon: "creditcard.fill", color: Theme.indigo)
+    ]
 
     @ViewBuilder
-    private func block(_ title: String, _ items: [TaskItem], _ color: Color) -> some View {
-        if !items.isEmpty {
-            Section {
-                ForEach(items) { t in row(t) }
-            } header: {
-                Text(title).foregroundColor(color)
-            }
+    static func view(for id: String) -> some View {
+        switch id {
+        case "reminders":
+            RemindersView()
+        case "expenses":
+            ExpensesView()
+        default:
+            Text("Скоро")
         }
     }
+}
 
-    private func row(_ t: TaskItem) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Button {
-                withAnimation { store.toggleDone(t) }
-            } label: {
-                Image(systemName: t.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundColor(t.isDone ? .green : .accentColor)
-            }
-            .buttonStyle(.plain)
+struct ContentView: View {
+    @State private var path: [String] = []
+    @State private var showHint = false
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(t.title)
-                    .strikethrough(t.isDone)
-                    .foregroundColor(t.isDone ? .secondary : .primary)
-                if let d = t.dueDate {
-                    Label(formatDue(d), systemImage: "bell.fill")
-                        .font(.caption)
-                        .foregroundColor(!t.isDone && d < Date() ? .red : .secondary)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: 4)
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 22) {
+                    ForEach(MiniAppRegistry.all) { app in
+                        NavigationLink(value: app.id) {
+                            tile(title: app.title, icon: app.icon, color: app.color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button {
+                        showHint = true
+                    } label: {
+                        placeholderTile
+                    }
+                    .buttonStyle(.plain)
                 }
-                if !t.notes.isEmpty {
-                    Text(t.notes).font(.caption).foregroundColor(.secondary).lineLimit(2)
-                }
+                .padding(16)
             }
-            Spacer()
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle("Приложения")
+            .navigationDestination(for: String.self) { id in
+                MiniAppRegistry.view(for: id)
+            }
+            .alert("Новое приложение", isPresented: $showHint) {
+                Button("Понятно", role: .cancel) {}
+            } message: {
+                Text("Здесь появится следующее мини-приложение.")
+            }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { editing = t }
-        .swipeActions {
-            Button(role: .destructive) { store.delete(t) } label: {
-                Label("Удалить", systemImage: "trash")
+        .onOpenURL { url in
+            if url.host == "reminders" {
+                path = ["reminders"]
             }
         }
     }
 
-    private var quickBar: some View {
-        let empty = quickTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(spacing: 12) {
-            TextField("Новая задача…", text: $quickTitle)
-                .submitLabel(.done)
-                .onSubmit(quickAdd)
-            Button {
-                editing = TaskItem(title: quickTitle)
-                quickTitle = ""
-            } label: {
-                Image(systemName: "bell.badge").font(.title2)
+    private func tile(title: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 15, style: .continuous).fill(color)
+                Image(systemName: icon)
+                    .font(.system(size: 28))
+                    .foregroundColor(.white)
             }
-            Button(action: quickAdd) {
-                Image(systemName: "arrow.up.circle.fill").font(.title)
-            }
-            .disabled(empty)
+            .frame(width: 64, height: 64)
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.white)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(.bar)
     }
 
-    private func quickAdd() {
-        let t = quickTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
-        store.upsert(TaskItem(title: t))
-        quickTitle = ""
+    private var placeholderTile: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .strokeBorder(Theme.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [5]))
+                Image(systemName: "plus")
+                    .font(.system(size: 26))
+                    .foregroundColor(Theme.secondary)
+            }
+            .frame(width: 64, height: 64)
+            Text("Новое")
+                .font(.caption)
+                .foregroundColor(.white)
+        }
     }
 }
