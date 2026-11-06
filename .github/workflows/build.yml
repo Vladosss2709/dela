@@ -17,11 +17,18 @@ jobs:
           xcodebuild -project Dela.xcodeproj -scheme Dela -configuration Release \
             -sdk iphoneos -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
-      - name: Package IPA
+      - name: Copy app
         run: |
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/Dela.app Payload/
-          zip -r Dela.ipa Payload
+      - name: Add entitlements (App Group for widget)
+        continue-on-error: true
+        run: |
+          brew install ldid
+          ldid -SConfig/DelaWidget.entitlements Payload/Dela.app/PlugIns/DelaWidget.appex/DelaWidget
+          ldid -SConfig/Dela.entitlements Payload/Dela.app/Dela
+      - name: Package IPA
+        run: zip -r Dela.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: Dela-ipa
