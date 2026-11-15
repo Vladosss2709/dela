@@ -4,6 +4,7 @@ import SwiftUI
 struct TaskEntry: TimelineEntry {
     let date: Date
     let tasks: [TaskItem]   // невыполненные, по возрастанию срока (просроченные первыми)
+    let sharedAvailable: Bool   // false — система не выдала общую папку, виджет не может читать задачи
 
     /// Что показать в малом виджете: ближайшее будущее, иначе просроченное, иначе без срока.
     var featured: TaskItem? {
@@ -23,7 +24,7 @@ struct Provider: TimelineProvider {
         TaskEntry(date: Date(), tasks: [
             TaskItem(title: "Позвонить маме", dueDate: Date().addingTimeInterval(7200)),
             TaskItem(title: "Купить продукты", dueDate: Date().addingTimeInterval(90000))
-        ])
+        ], sharedAvailable: true)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TaskEntry) -> Void) {
@@ -48,7 +49,7 @@ struct Provider: TimelineProvider {
         let sorted = all
             .filter { !$0.isDone }
             .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
-        return TaskEntry(date: date, tasks: sorted)
+        return TaskEntry(date: date, tasks: sorted, sharedAvailable: SharedStorage.groupURL != nil)
     }
 }
 
@@ -91,7 +92,7 @@ struct SmallView: View {
                         .foregroundColor(Theme.secondary)
                 }
             } else {
-                Text("Нет задач")
+                Text(entry.sharedAvailable ? "Нет задач" : "Нет доступа к общей папке приложения")
                     .font(.subheadline)
                     .foregroundColor(Theme.secondary)
             }
@@ -117,7 +118,7 @@ struct MediumView: View {
             }
             if entry.tasks.isEmpty {
                 Spacer()
-                Text("Нет задач")
+                Text(entry.sharedAvailable ? "Нет задач" : "Нет доступа к общей папке приложения")
                     .font(.subheadline)
                     .foregroundColor(Theme.secondary)
                 Spacer()

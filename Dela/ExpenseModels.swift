@@ -14,6 +14,37 @@ struct Expense: Identifiable, Codable, Equatable {
     var title: String
     var shares: [UUID: Double]      // кто сколько должен в рублях (не проценты)
     var date = Date()
+    var cancelled: Bool = false     // отменённая трата не учитывается в итогах, но остаётся в истории
+
+    enum CodingKeys: String, CodingKey {
+        case id, payerID, amount, title, shares, date, cancelled
+    }
+}
+
+extension Expense {
+    // Старые сохранённые данные не содержат поля cancelled — читаем их без ошибок.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        payerID = try c.decode(UUID.self, forKey: .payerID)
+        amount = try c.decode(Double.self, forKey: .amount)
+        title = try c.decode(String.self, forKey: .title)
+        shares = try c.decode([UUID: Double].self, forKey: .shares)
+        date = try c.decodeIfPresent(Date.self, forKey: .date) ?? Date()
+        cancelled = try c.decodeIfPresent(Bool.self, forKey: .cancelled) ?? false
+    }
+}
+
+enum HistoryKind: String, Codable {
+    case eventCreated, expenseAdded, expenseCancelled, expenseRestored, memberAdded, memberRemoved
+}
+
+struct HistoryEntry: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var date = Date()
+    var kind: HistoryKind
+    var text: String
+    var expenseID: UUID? = nil
 }
 
 struct TripEvent: Identifiable, Codable, Equatable {
@@ -22,6 +53,23 @@ struct TripEvent: Identifiable, Codable, Equatable {
     var members: [Member]
     var expenses: [Expense] = []
     var createdAt = Date()
+    var history: [HistoryEntry] = []
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, members, expenses, createdAt, history
+    }
+}
+
+extension TripEvent {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        members = try c.decode([Member].self, forKey: .members)
+        expenses = try c.decodeIfPresent([Expense].self, forKey: .expenses) ?? []
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        history = try c.decodeIfPresent([HistoryEntry].self, forKey: .history) ?? []
+    }
 }
 
 struct Transfer: Identifiable {
@@ -74,7 +122,28 @@ func percentText(_ x: Double) -> String {
 // ───────── Итоги и взаимозачёт ─────────
 
 extension TripEvent {
-    var total: Double { expenses.reduce(0) { $0 + $1.amount } }
+    /// Траты без отменённых.
+    var active: [Expense] { expenses.filter { !$0.cancelled } }
+
+    var total: Double { active.reduce(0) { $0 + $1.amount } }
+
+    mutating func addLog(_ kind: HistoryKind, _ text: String, expenseID: UUID? = nil) {
+        history.append(HistoryEntry(kind: kind, text: text, expenseID: expenseID))
+    }
+
+    func describe(_ x: Expense) -> String {
+        "\(memberName(x.payerID)) заплатил \(money(x.amount)) — \(x.title) · на \(x.shares.count) чел."
+    }
+
+    /// Для данных, сохранённых до появления истории: восстанавливаем записи из существующих трат.
+    mutating func rebuildHistory() {
+        var list = [HistoryEntry(date: createdAt, kind: .eventCreated, text: "Событие «\(name)» создано")]
+        for x in expenses {
+            list.append(HistoryEntry(date: x.date, kind: .expenseAdded, text: describe(x), expenseID: x.id))
+        }
+        list.sort { $0.date < $1.date }
+        history = list
+    }
 
     func memberName(_ id: UUID) -> String {
         members.first { $0.id == id }?.name ?? "?"
@@ -87,7 +156,7 @@ extension TripEvent {
         var pair: [PairKey: Double] = [:]
         for m in members { bal[m.id] = 0 }
 
-        for e in expenses {
+        for e in active {
             bal[e.payerID, default: 0] += e.amount
             for (user, share) in e.shares {
                 bal[user, default: 0] -= share

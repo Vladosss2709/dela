@@ -12,35 +12,44 @@ struct TaskItem: Identifiable, Codable, Equatable {
 enum SharedStorage {
     static let defaultGroup = "group.com.mydela.app"
 
-    /// Имя App Group. Sideloadly/AltStore могут переименовать группу при подписи,
-    /// поэтому сначала смотрим в профиль подписи, потом в Info.plist, потом берём стандартное.
-    static let groupID: String = {
-        if let g = groupFromProvisioningProfile() { return g }
-        if let list = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String],
-           let first = list.first {
-            return first
-        }
-        return defaultGroup
-    }()
-
-    private static func groupFromProvisioningProfile() -> String? {
+    /// Все группы, которые стоит попробовать: из профиля подписи, из Info.plist (AltStore) и стандартная.
+    private static func groupsFromProvisioningProfile() -> [String] {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .isoLatin1),
               let start = text.range(of: "<?xml"),
-              let end = text.range(of: "</plist>") else { return nil }
+              let end = text.range(of: "</plist>") else { return [] }
         let xml = String(text[start.lowerBound..<end.upperBound])
         guard let xmlData = xml.data(using: .isoLatin1),
               let plist = try? PropertyListSerialization.propertyList(from: xmlData, options: [], format: nil) as? [String: Any],
               let ents = plist["Entitlements"] as? [String: Any],
-              let groups = ents["com.apple.security.application-groups"] as? [String],
-              let first = groups.first else { return nil }
-        return first
+              let groups = ents["com.apple.security.application-groups"] as? [String] else { return [] }
+        return groups
     }
 
-    static var groupURL: URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID)
+    private static func candidateGroups() -> [String] {
+        var list = SharedStorage.groupsFromProvisioningProfile()
+        if let alt = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] {
+            list.append(contentsOf: alt)
+        }
+        list.append(SharedStorage.defaultGroup)
+        var seen = Set<String>()
+        return list.filter { seen.insert($0).inserted }
     }
+
+    /// Первая группа, для которой система реально выдала общую папку.
+    private static let resolved: (id: String, url: URL?) = {
+        let groups = SharedStorage.candidateGroups()
+        for g in groups {
+            if let u = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: g) {
+                return (id: g, url: u)
+            }
+        }
+        return (id: groups.first ?? SharedStorage.defaultGroup, url: nil)
+    }()
+
+    static var groupID: String { resolved.id }
+    static var groupURL: URL? { resolved.url }
 
     static var documentsURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

@@ -63,7 +63,7 @@ struct ExpensesView: View {
             }
             Button("Отмена", role: .cancel) { toDelete = nil }
         } message: {
-            Text("Все траты и расчёты будут удалены. Действие необратимо.")
+            Text("Все траты, история и расчёты будут удалены. Действие необратимо.")
         }
     }
 
@@ -71,7 +71,7 @@ struct ExpensesView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(e.name).foregroundColor(.white)
-                Text("\(e.members.count) участн. · \(e.expenses.count) трат")
+                Text("\(e.members.count) участн. · \(e.active.count) трат")
                     .font(.caption)
                     .foregroundColor(Theme.secondary)
             }
@@ -206,6 +206,7 @@ struct EventView: View {
                 Text("Траты").tag(0)
                 Text("Итоги").tag(1)
                 Text("Участники").tag(2)
+                Text("История").tag(3)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
@@ -216,13 +217,15 @@ struct EventView: View {
                     expensesList(event)
                 } else if tab == 1 {
                     settlementList(event)
-                } else {
+                } else if tab == 2 {
                     membersList(event)
+                } else {
+                    historyList(event)
                 }
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if tab != 2 {
+            if tab == 0 || tab == 1 {
                 Button {
                     showAdd = true
                 } label: {
@@ -252,7 +255,7 @@ struct EventView: View {
             }
             Button("Отмена", role: .cancel) { memberToRemove = nil }
         } message: {
-            Text("Траты этого участника как плательщика и его доли в других тратах тоже удалятся. Баланс пересчитается.")
+            Text("Траты этого участника как плательщика будут удалены, а его доли в других тратах убраны. Баланс пересчитается.")
         }
         .confirmationDialog("Удалить событие?",
                             isPresented: $confirmDelete,
@@ -263,7 +266,7 @@ struct EventView: View {
             }
             Button("Отмена", role: .cancel) {}
         } message: {
-            Text("Все траты и расчёты будут удалены. Действие необратимо.")
+            Text("Все траты, история и расчёты будут удалены. Действие необратимо.")
         }
     }
 
@@ -273,7 +276,7 @@ struct EventView: View {
         HStack {
             stat("Участников", "\(event.members.count)")
             Spacer()
-            stat("Трат", "\(event.expenses.count)")
+            stat("Трат", "\(event.active.count)")
             Spacer()
             stat("Общая сумма", money(event.total))
         }
@@ -294,12 +297,12 @@ struct EventView: View {
 
     private func expensesList(_ event: TripEvent) -> some View {
         List {
-            if event.expenses.isEmpty {
+            if event.active.isEmpty {
                 Text("Пока нет ни одной траты")
                     .foregroundColor(Theme.secondary)
                     .listRowBackground(Color.clear)
             }
-            ForEach(event.expenses.reversed()) { x in
+            ForEach(event.active.reversed()) { x in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(x.title).foregroundColor(.white)
@@ -314,9 +317,9 @@ struct EventView: View {
                 .listRowSeparatorTint(Theme.sep)
                 .swipeActions {
                     Button(role: .destructive) {
-                        store.deleteExpense(x.id, from: eventID)
+                        store.cancelExpense(x.id, in: eventID)
                     } label: {
-                        Label("Удалить", systemImage: "trash")
+                        Label("Отменить", systemImage: "arrow.uturn.backward")
                     }
                 }
             }
@@ -329,7 +332,7 @@ struct EventView: View {
 
     private func settlementList(_ event: TripEvent) -> some View {
         let s = event.settlement()
-        let clean = event.expenses.isEmpty || s.balances.values.allSatisfy { abs($0) < 0.01 }
+        let clean = event.active.isEmpty || s.balances.values.allSatisfy { abs($0) < 0.01 }
         return List {
             if clean {
                 Text("Всё чисто — никто никому не должен")
@@ -431,5 +434,90 @@ struct EventView: View {
     private func addMember() {
         store.addMember(named: newMember, to: eventID)
         newMember = ""
+    }
+
+    // ── Вкладка «История» ──
+
+    private func historyList(_ event: TripEvent) -> some View {
+        List {
+            if event.history.isEmpty {
+                Text("История пока пуста")
+                    .foregroundColor(Theme.secondary)
+                    .listRowBackground(Color.clear)
+            }
+            ForEach(event.history.reversed()) { h in
+                historyRow(event, h)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+    }
+
+    private func historyRow(_ event: TripEvent, _ h: HistoryEntry) -> some View {
+        let exp = event.expenses.first { $0.id == h.expenseID }
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: historyIcon(h.kind))
+                .font(.title3)
+                .foregroundColor(historyColor(h.kind))
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(h.text)
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                Text(Fmt.due(h.date))
+                    .font(.caption)
+                    .foregroundColor(Theme.secondary)
+                if h.kind == .expenseAdded {
+                    if let x = exp {
+                        if x.cancelled {
+                            HStack(spacing: 12) {
+                                Text("Отменена")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.overdue)
+                                Button("Вернуть") {
+                                    store.restoreExpense(x.id, in: eventID)
+                                }
+                                .font(.caption.weight(.medium))
+                                .buttonStyle(.borderless)
+                            }
+                        } else {
+                            Button("Отменить трату") {
+                                store.cancelExpense(x.id, in: eventID)
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(Theme.overdue)
+                            .buttonStyle(.borderless)
+                        }
+                    } else {
+                        Text("Трата удалена вместе с участником")
+                            .font(.caption)
+                            .foregroundColor(Theme.secondary)
+                    }
+                }
+            }
+            Spacer()
+        }
+        .listRowBackground(Theme.card)
+        .listRowSeparatorTint(Theme.sep)
+    }
+
+    private func historyIcon(_ k: HistoryKind) -> String {
+        switch k {
+        case .eventCreated: return "flag.fill"
+        case .expenseAdded: return "plus.circle.fill"
+        case .expenseCancelled: return "arrow.uturn.backward.circle.fill"
+        case .expenseRestored: return "arrow.uturn.forward.circle.fill"
+        case .memberAdded: return "person.fill.badge.plus"
+        case .memberRemoved: return "person.fill.xmark"
+        }
+    }
+
+    private func historyColor(_ k: HistoryKind) -> Color {
+        switch k {
+        case .expenseAdded: return Theme.accent
+        case .expenseCancelled: return Theme.overdue
+        case .expenseRestored: return Theme.good
+        default: return Theme.secondary
+        }
     }
 }

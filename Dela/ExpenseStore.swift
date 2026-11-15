@@ -15,7 +15,8 @@ final class ExpenseStore: ObservableObject {
 
     @discardableResult
     func addEvent(name: String, memberNames: [String]) -> UUID {
-        let event = TripEvent(name: name, members: memberNames.map { Member(name: $0) })
+        var event = TripEvent(name: name, members: memberNames.map { Member(name: $0) })
+        event.addLog(.eventCreated, "Событие «\(name)» создано")
         events.insert(event, at: 0)
         return event.id
     }
@@ -31,13 +32,38 @@ final class ExpenseStore: ObservableObject {
         events[i] = e
     }
 
+    // ── Траты ──
+
     func addExpense(_ expense: Expense, to id: UUID) {
-        mutate(id) { $0.expenses.append(expense) }
+        mutate(id) { e in
+            e.expenses.append(expense)
+            let text = e.describe(expense)
+            e.addLog(.expenseAdded, text, expenseID: expense.id)
+        }
     }
 
-    func deleteExpense(_ expenseID: UUID, from id: UUID) {
-        mutate(id) { $0.expenses.removeAll { $0.id == expenseID } }
+    /// Отмена: трата перестаёт учитываться в итогах, но остаётся в истории и её можно вернуть.
+    func cancelExpense(_ expenseID: UUID, in id: UUID) {
+        mutate(id) { e in
+            guard let i = e.expenses.firstIndex(where: { $0.id == expenseID }),
+                  !e.expenses[i].cancelled else { return }
+            e.expenses[i].cancelled = true
+            let text = "Отменена трата: " + e.describe(e.expenses[i])
+            e.addLog(.expenseCancelled, text, expenseID: expenseID)
+        }
     }
+
+    func restoreExpense(_ expenseID: UUID, in id: UUID) {
+        mutate(id) { e in
+            guard let i = e.expenses.firstIndex(where: { $0.id == expenseID }),
+                  e.expenses[i].cancelled else { return }
+            e.expenses[i].cancelled = false
+            let text = "Возвращена трата: " + e.describe(e.expenses[i])
+            e.addLog(.expenseRestored, text, expenseID: expenseID)
+        }
+    }
+
+    // ── Участники ──
 
     @discardableResult
     func addMember(named name: String, to id: UUID) -> Bool {
@@ -48,6 +74,7 @@ final class ExpenseStore: ObservableObject {
             let exists = e.members.contains { $0.name.lowercased() == clean.lowercased() }
             if !exists {
                 e.members.append(Member(name: clean))
+                e.addLog(.memberAdded, "Добавлен участник: \(clean)")
                 added = true
             }
         }
@@ -57,17 +84,26 @@ final class ExpenseStore: ObservableObject {
     /// Как в боте: удаляются траты этого участника как плательщика и его доли в остальных тратах.
     func removeMember(_ memberID: UUID, from id: UUID) {
         mutate(id) { e in
+            let name = e.memberName(memberID)
+            let removed = e.expenses.filter { $0.payerID == memberID }.count
             e.expenses.removeAll { $0.payerID == memberID }
             for i in e.expenses.indices {
                 e.expenses[i].shares.removeValue(forKey: memberID)
             }
             e.members.removeAll { $0.id == memberID }
+            let extra = removed > 0 ? " (удалено трат: \(removed))" : ""
+            e.addLog(.memberRemoved, "Удалён участник: \(name)\(extra)")
         }
     }
 
+    // ── Хранение ──
+
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([TripEvent].self, from: data) else { return }
+              var decoded = try? JSONDecoder().decode([TripEvent].self, from: data) else { return }
+        for i in decoded.indices where decoded[i].history.isEmpty {
+            decoded[i].rebuildHistory()
+        }
         events = decoded
     }
 
