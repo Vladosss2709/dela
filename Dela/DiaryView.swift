@@ -10,8 +10,10 @@ struct DiaryView: View {
     @State private var month = Date()          // любой день показываемого месяца
     @State private var selected = Date()
     @State private var text = ""
+    @State private var mood = 0
     @FocusState private var focused: Bool
 
+    private static let moods = ["😞", "😕", "😐", "🙂", "😄"]
     private static let weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
     private var cal: Calendar {
@@ -21,20 +23,12 @@ struct DiaryView: View {
         return c
     }
 
-    private func trimmed(_ s: String) -> String {
-        s.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Есть ли изменения, которые ещё не сохранены.
-    private var isDirty: Bool {
-        trimmed(text) != trimmed(store.entry(for: selected)?.text ?? "")
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 monthHeader
                 calendarCard
+                statsRow
                 editorCard
             }
             .padding(16)
@@ -52,7 +46,7 @@ struct DiaryView: View {
             }
         }
         .onAppear { loadSelected() }
-        .onDisappear { saveIfNeeded() }
+        .onChange(of: text) { _ in commit() }
     }
 
     // ── Месяц ──
@@ -116,7 +110,7 @@ struct DiaryView: View {
         let c = cal
         let isSelected = c.isDate(date, inSameDayAs: selected)
         let isToday = c.isDateInToday(date)
-        let hasEntry = store.entry(for: date) != nil
+        let dotColor: Color = store.entry(for: date).map { moodColor($0.mood) } ?? Color.clear
         return Button {
             select(date)
         } label: {
@@ -127,13 +121,32 @@ struct DiaryView: View {
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(isSelected ? Theme.accent : Color.clear))
                     .overlay(Circle().stroke(Theme.accent, lineWidth: (isToday && !isSelected) ? 1.5 : 0))
-                Circle()
-                    .fill(hasEntry ? Theme.accentLight : Color.clear)
-                    .frame(width: 5, height: 5)
+                Circle().fill(dotColor).frame(width: 5, height: 5)
             }
             .frame(height: 44)
         }
         .buttonStyle(.plain)
+    }
+
+    // ── Серия и счётчик ──
+
+    private var statsRow: some View {
+        HStack(spacing: 8) {
+            chip("flame.fill", "Серия: \(store.streak()) дн.")
+            chip("pencil", "В месяце: \(store.count(inMonthOf: month))")
+            Spacer()
+        }
+    }
+
+    private func chip(_ icon: String, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).foregroundColor(Theme.accent).font(.caption)
+            Text(title).font(.footnote).foregroundColor(.white)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Theme.card)
+        .clipShape(Capsule())
     }
 
     // ── Запись дня ──
@@ -144,12 +157,24 @@ struct DiaryView: View {
                 .font(.headline)
                 .foregroundColor(.white)
 
+            HStack {
+                Text("Настроение")
+                    .font(.caption)
+                    .foregroundColor(Theme.secondary)
+                Spacer()
+                HStack(spacing: 6) {
+                    ForEach(1...5, id: \.self) { m in
+                        moodButton(m)
+                    }
+                }
+            }
+
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $text)
                     .focused($focused)
                     .scrollContentBackground(.hidden)
                     .foregroundColor(.white)
-                    .frame(minHeight: 170)
+                    .frame(minHeight: 150)
                     .padding(4)
                     .background(Theme.card2)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -163,72 +188,65 @@ struct DiaryView: View {
             }
 
             HStack {
-                statusLabel
+                Text(store.entry(for: selected) != nil ? "Сохранено" : "Запись пока пуста")
                 Spacer()
                 Text("\(text.count) симв.")
-                    .foregroundColor(Theme.secondary)
             }
             .font(.caption)
-
-            Button {
-                commit()
-                focused = false
-            } label: {
-                Text("Сохранить")
-                    .font(.body.weight(.medium))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(isDirty ? Theme.accent : Theme.card2)
-                    .foregroundColor(isDirty ? .white : Theme.secondary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(!isDirty)
+            .foregroundColor(Theme.secondary)
         }
         .padding(16)
         .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    @ViewBuilder
-    private var statusLabel: some View {
-        if isDirty {
-            Text("Есть несохранённые изменения")
-                .foregroundColor(Theme.overdue)
-        } else if store.entry(for: selected) != nil {
-            Text("Сохранено")
-                .foregroundColor(Theme.secondary)
-        } else {
-            Text("Запись пока пуста")
-                .foregroundColor(Theme.secondary)
+    private func moodButton(_ m: Int) -> some View {
+        Button {
+            mood = (mood == m) ? 0 : m
+            commit()
+        } label: {
+            Text(DiaryView.moods[m - 1])
+                .font(.title3)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(mood == m ? Theme.accent.opacity(0.3) : Theme.card2))
+                .overlay(Circle().stroke(mood == m ? Theme.accent : Color.clear, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func moodColor(_ m: Int) -> Color {
+        switch m {
+        case 1: return Theme.indigo
+        case 2: return Theme.teal
+        case 3: return Theme.secondary
+        case 4: return Theme.star
+        case 5: return Theme.accent
+        default: return Theme.accentLight
         }
     }
 
     // ── Действия ──
 
     private func commit() {
-        store.set(date: selected, text: text)
-    }
-
-    /// Чтобы ничего не потерялось: при смене дня или выходе несохранённый текст сохраняется сам.
-    private func saveIfNeeded() {
-        if isDirty { commit() }
+        store.set(date: selected, text: text, mood: mood)
     }
 
     private func select(_ date: Date) {
         focused = false
-        saveIfNeeded()
+        commit()
         selected = date
         loadSelected()
     }
 
     private func loadSelected() {
-        text = store.entry(for: selected)?.text ?? ""
+        let e = store.entry(for: selected)
+        mood = e?.mood ?? 0
+        text = e?.text ?? ""
     }
 
     private func goToday() {
         focused = false
-        saveIfNeeded()
+        commit()
         month = Date()
         selected = Date()
         loadSelected()

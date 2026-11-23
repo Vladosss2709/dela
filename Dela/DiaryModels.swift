@@ -2,6 +2,7 @@ import Foundation
 
 struct DiaryEntry: Codable, Equatable {
     var text: String
+    var mood: Int          // 0 — не выбрано, 1…5 — от плохого к отличному
     var updatedAt: Date
 }
 
@@ -35,29 +36,50 @@ final class DiaryStore: ObservableObject {
         entries[DiaryStore.key(date)]
     }
 
-    /// Пустой текст удаляет запись за этот день.
-    func set(date: Date, text: String) {
+    /// Пустой текст без настроения удаляет запись.
+    func set(date: Date, text: String, mood: Int) {
         let k = DiaryStore.key(date)
         let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if empty {
+        if empty && mood == 0 {
             if entries[k] != nil {
                 entries.removeValue(forKey: k)
             }
             return
         }
-        if let old = entries[k], old.text == text {
+        if let old = entries[k], old.text == text, old.mood == mood {
             return
         }
-        entries[k] = DiaryEntry(text: text, updatedAt: Date())
+        entries[k] = DiaryEntry(text: text, mood: mood, updatedAt: Date())
+    }
+
+    /// Сколько дней подряд есть записи. Если сегодня ещё пусто, считаем от вчера.
+    func streak(today: Date = Date()) -> Int {
+        let cal = Calendar.current
+        var day = today
+        if entry(for: day) == nil {
+            day = cal.date(byAdding: .day, value: -1, to: day) ?? day
+        }
+        var n = 0
+        while entry(for: day) != nil {
+            n += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: day) else { break }
+            day = prev
+        }
+        return n
+    }
+
+    func count(inMonthOf date: Date) -> Int {
+        let cal = Calendar.current
+        return entries.keys.filter { key in
+            guard let d = DiaryStore.keyFormatter.date(from: key) else { return false }
+            return cal.isDate(d, equalTo: date, toGranularity: .month)
+        }.count
     }
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode([String: DiaryEntry].self, from: data) else { return }
-        // Записи без текста (остались от старой версии с настроением) не показываем.
-        entries = decoded.filter {
-            !$0.value.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        entries = decoded
     }
 
     private func save() {

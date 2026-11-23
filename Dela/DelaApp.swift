@@ -7,6 +7,7 @@ struct DelaApp: App {
     @StateObject private var tasks = TaskStore()
     @StateObject private var expenses = ExpenseStore()
     @StateObject private var wishes = WishStore()
+    @StateObject private var diary = DiaryStore()
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +15,7 @@ struct DelaApp: App {
                 .environmentObject(tasks)
                 .environmentObject(expenses)
                 .environmentObject(wishes)
+                .environmentObject(diary)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }

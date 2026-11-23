@@ -18,7 +18,8 @@ enum MiniAppRegistry {
     static let all: [MiniApp] = [
         MiniApp(id: "reminders", title: "Дела", icon: "checklist", color: Theme.accent),
         MiniApp(id: "expenses", title: "Траты", icon: "creditcard.fill", color: Theme.indigo),
-        MiniApp(id: "wishlist", title: "Хочу", icon: "bookmark.fill", color: Theme.teal)
+        MiniApp(id: "wishlist", title: "Хочу", icon: "bookmark.fill", color: Theme.teal),
+        MiniApp(id: "diary", title: "Дневник", icon: "text.book.closed.fill", color: Theme.coral)
     ]
 
     @ViewBuilder
@@ -30,6 +31,8 @@ enum MiniAppRegistry {
             ExpensesView()
         case "wishlist":
             WishlistView()
+        case "diary":
+            DiaryView()
         default:
             Text("Скоро")
         }
