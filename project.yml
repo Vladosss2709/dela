@@ -10,8 +10,6 @@ targets:
     sources:
       - Dela
       - Shared
-    dependencies:
-      - target: DelaWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mydela.app
@@ -19,7 +17,6 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         MARKETING_VERSION: "2.0"
         CURRENT_PROJECT_VERSION: "2"
-        CODE_SIGN_ENTITLEMENTS: Config/Dela.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Dela/Info.plist
@@ -27,23 +24,3 @@ targets:
         CFBundleDisplayName: Хаб
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-  DelaWidget:
-    type: app-extension
-    platform: iOS
-    sources:
-      - DelaWidget
-      - Shared
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mydela.app.widget
-        SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "2.0"
-        CURRENT_PROJECT_VERSION: "2"
-        CODE_SIGN_ENTITLEMENTS: Config/DelaWidget.entitlements
-    info:
-      path: DelaWidget/Info.plist
-      properties:
-        CFBundleDisplayName: Дела
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension

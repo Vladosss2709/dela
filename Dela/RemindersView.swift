@@ -43,14 +43,6 @@ struct RemindersView: View {
 
     var body: some View {
         List {
-            if SharedStorage.groupURL == nil {
-                Section {
-                    Text("Виджет не видит задачи: при подписи не выдана общая папка приложения (App Group).\nИскали: \(SharedStorage.groupID)")
-                        .font(.caption)
-                        .foregroundColor(Theme.overdue)
-                        .listRowBackground(Theme.card)
-                }
-            }
             block("Просрочено", overdue, Theme.overdue)
             block("Сегодня", today, Theme.accent)
             block("Позже", later, .white)
